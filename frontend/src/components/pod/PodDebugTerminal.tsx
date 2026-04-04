@@ -21,7 +21,11 @@ import _ from 'lodash';
 import { useSnackbar } from 'notistack';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_POD_DEBUG_IMAGE, loadClusterSettings } from '../../helpers/clusterSettings';
+import {
+  type DebugProfile,
+  DEFAULT_POD_DEBUG_IMAGE,
+  loadClusterSettings,
+} from '../../helpers/clusterSettings';
 import { getCluster } from '../../lib/cluster';
 import Pod from '../../lib/k8s/pod';
 import { Channel, useTerminalStream, XTerminalConnected } from '../../lib/k8s/useTerminalStream';
@@ -91,17 +95,20 @@ function generateContainerName(item: Pod): string {
  * @param containerName - Name for the new container
  * @param debugImage - Container image for debugging
  * @param onError - Error handler callback
+ * @param debugProfile - Security profile to apply to the container, mirrors kubectl debug --profile.
+ * Defaults to 'restricted'. Use 'legacy' to apply no securityContext for non-restricted clusters.
  * @returns Object with containerName if successful, empty object on error
  */
 async function debugPod(
   item: Pod,
   containerName: string,
   debugImage: string,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  debugProfile: DebugProfile = 'restricted'
 ) {
   try {
     // Add ephemeral container to the pod
-    await item.addEphemeralContainer(containerName, debugImage, ['sh']);
+    await item.addEphemeralContainer(containerName, debugImage, ['sh'], debugProfile);
 
     // Wait for the container to be ready by polling the pod status
     const maxRetries = 30; // 30 seconds timeout
@@ -188,6 +195,7 @@ export function PodDebugTerminal(props: PodDebugTerminalProps) {
       const config = clusterSettings.podDebugTerminal;
       const debugImage = config?.debugImage || DEFAULT_POD_DEBUG_IMAGE;
       const isEnabled = config?.isEnabled ?? true;
+      const debugProfile = config?.debugProfile ?? 'restricted';
 
       if (!isEnabled) {
         enqueueSnackbar(t('translation|Pod debug is disabled in settings'), {
@@ -222,7 +230,8 @@ export function PodDebugTerminal(props: PodDebugTerminalProps) {
               { variant: 'error' }
             );
             xtermRef.current?.xterm.writeln(`\r\n${t('translation|Error')}: ${errorMessage}\r\n`);
-          }
+          },
+          debugProfile
         );
 
         if (!readyContainerName) {
